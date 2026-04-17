@@ -9,6 +9,7 @@ from guardrails.validator_base import (
     OnFailAction
 )
 from rapidfuzz import fuzz
+from string import Template
 
 
 @register_validator(name="guardrails/detect_system_prompt_leakage", data_type="string")
@@ -50,7 +51,7 @@ class DetectSystemPromptLeakage(Validator):
 
         if score > self._threshold:
             return FailResult(
-                errorMessage=f"System prompt leakage found in '{value}'",
+                errorMessage=Template("System prompt leakage found in '${value}'").safe_substitute(value=value),
                 metadata=metadata
             )
         return PassResult(metadata=metadata)
