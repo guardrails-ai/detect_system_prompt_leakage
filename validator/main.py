@@ -1,4 +1,4 @@
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Dict, Optional
 
 from guardrails.validator_base import (
     FailResult,
@@ -6,43 +6,52 @@ from guardrails.validator_base import (
     ValidationResult,
     Validator,
     register_validator,
+    OnFailAction
 )
+from rapidfuzz import fuzz
+from string import Template
 
 
-@register_validator(name="guardrails/validator_template", data_type="string")
-class ValidatorTemplate(Validator):
-    """Validates that {fill in how you validator interacts with the passed value}.
+@register_validator(name="guardrails/detect_system_prompt_leakage", data_type="string")
+class DetectSystemPromptLeakage(Validator):
+    """Checks for system prompt leakage in LLM output.
 
     **Key Properties**
 
     | Property                      | Description                       |
     | ----------------------------- | --------------------------------- |
-    | Name for `format` attribute   | `guardrails/validator_template`   |
+    | Name for `format` attribute   | `guardrails/detect_system_prompt_leakage`   |
     | Supported data types          | `string`                          |
-    | Programmatic fix              | {If you support programmatic fixes, explain it here. Otherwise `None`} |
+    | Programmatic fix              | None |
 
     Args:
-        arg_1 (string): {Description of the argument here}
-        arg_2 (string): {Description of the argument here}
+        system_prompt (str): The system prompt to guard.
+        threshold (int): Threshold between 0 and 100 above which a similarity is considered leakage. Defaults to 40.
     """  # noqa
 
     # If you don't have any init args, you can omit the __init__ method.
     def __init__(
         self,
-        arg_1: str,
-        arg_2: str,
-        on_fail: Optional[Callable] = None,
+        system_prompt: str,
+        threshold: int = 40,
+        on_fail: Optional[OnFailAction] = None,
     ):
-        super().__init__(on_fail=on_fail, arg_1=arg_1, arg_2=arg_2)
-        self._arg_1 = arg_1
-        self._arg_2 = arg_2
+        super().__init__(on_fail=on_fail, system_prompt=system_prompt, threshold=threshold)
+        self._system_prompt = system_prompt
+        self._threshold = threshold
 
     def validate(self, value: Any, metadata: Dict = {}) -> ValidationResult:
-        """Validates that {fill in how you validator interacts with the passed value}."""
-        # Add your custom validator logic here and return a PassResult or FailResult accordingly.
-        if value != "pass": # FIXME
+        """Validates that value is below the threshold of similarity to the system prompt."""
+        
+        score = fuzz.ratio(value, self._system_prompt)
+
+        metadata["guardrails/detect_system_prompt_leakage"] = {
+            "score": score
+        }
+
+        if score > self._threshold:
             return FailResult(
-                error_message="{A descriptive but concise error message about why validation failed}",
-                fix_value="{The programmtic fix if applicable, otherwise remove this kwarg.}",
+                errorMessage=Template("System prompt leakage found in '${value}'").safe_substitute(value=value),
+                metadata=metadata
             )
-        return PassResult()
+        return PassResult(metadata=metadata)
